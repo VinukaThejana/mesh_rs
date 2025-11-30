@@ -1,6 +1,8 @@
 pub mod obj;
 pub mod stl;
 
+use std::any;
+
 use nalgebra::Vector3;
 
 pub const MAX_TRIANGLES: u32 = 1_000_000;
@@ -104,6 +106,7 @@ impl Triangle {
 
 pub trait MeshParser {
     fn parse(bytes: &[u8]) -> anyhow::Result<Vec<Triangle>, anyhow::Error>;
+    fn write(path: &std::path::Path, triangles: &[Triangle]) -> anyhow::Result<(), anyhow::Error>;
 }
 
 #[derive(Debug)]

@@ -5,10 +5,13 @@
 // 80-83       | // 4 byte unsigned int (number of triangles)
 // 84-end      | triangle data // INFO: (50 bytes per triangle)
 
-use byteorder::{LittleEndian, ReadBytesExt};
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 use crate::model::{MAX_TRIANGLES, MeshParser, Triangle, Vec3};
-use std::io::{Cursor, Seek, SeekFrom};
+use std::{
+    fs::File,
+    io::{BufWriter, Cursor, Seek, SeekFrom, Write},
+};
 
 pub struct STlParser;
 
@@ -19,6 +22,49 @@ impl MeshParser for STlParser {
         } else {
             parse_binary(bytes)
         }
+    }
+
+    fn write(path: &std::path::Path, triangles: &[Triangle]) -> anyhow::Result<(), anyhow::Error> {
+        let file = File::create(path)?;
+        let mut writer = BufWriter::new(file);
+
+        // write 80 byte header
+        let mut header = [0u8; 80];
+        // add a simple signature to the header
+        let signature = b"created by mesh_rs";
+        header[..signature.len()].copy_from_slice(signature);
+        writer.write_all(&header)?;
+
+        // write the triangle count
+        // 4 bytes, u32, little-endian
+        let triangle_count = triangles.len();
+        if triangle_count > u32::MAX as usize {
+            return Err(anyhow::anyhow!("too many triangles to write to STL file"));
+        }
+        writer.write_u32::<LittleEndian>(triangle_count as u32)?;
+
+        // write each triangle
+        for triangle in triangles {
+            // normal vector (3 * 4 bytes, (x, y, z))
+            // we write a zero normal vector, as it can be recalculated by most software
+            writer.write_f32::<LittleEndian>(0.0)?; // normal vector x
+            writer.write_f32::<LittleEndian>(0.0)?; // normal vector y
+            writer.write_f32::<LittleEndian>(0.0)?; // normal vector z
+
+            // vertices of the triangle
+            for vertex in &triangle.vertices {
+                writer.write_f32::<LittleEndian>(vertex.0)?; // vertex x
+                writer.write_f32::<LittleEndian>(vertex.1)?; // vertex y
+                writer.write_f32::<LittleEndian>(vertex.2)?; // vertex z
+            }
+
+            // attribute byte count (2 bytes)
+            // we write zero for no attributes
+            writer.write_u16::<LittleEndian>(0)?;
+        }
+
+        writer.flush()?;
+        anyhow::Ok(())
     }
 }
 

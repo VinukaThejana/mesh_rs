@@ -130,4 +130,8 @@ impl MeshParser for OBJParser {
         let result: Vec<Triangle> = result_vecs?.into_iter().flatten().collect();
         Ok(result)
     }
+
+    fn write(path: &std::path::Path, triangles: &[Triangle]) -> anyhow::Result<(), anyhow::Error> {
+        todo!()
+    }
 }

@@ -1,6 +1,6 @@
 use std::{fs::OpenOptions, io::Read, path::PathBuf};
 
-use object_resize::{
+use mesh_rs::{
     calculate,
     model::{self, MeshParser},
 };
@@ -162,11 +162,14 @@ fn main() -> anyhow::Result<()> {
             };
 
             println!("{} Scaled model processed.", "Done:".green().bold());
-            println!(
-                "{} Saving to {:?} (Add the write functionality!)",
-                "Output:".yellow(),
-                output_path
-            );
+            println!("{} Saving to {:?}", "Output:".yellow(), output_path);
+
+            match format {
+                model::Format::STL => model::stl::STlParser::write(&output_path, &triangles)?,
+                model::Format::OBJ => model::obj::OBJParser::write(&output_path, &triangles)?,
+            }
+
+            println!("{} File saved successfully.", "Success:".green().bold());
         }
     }
 
