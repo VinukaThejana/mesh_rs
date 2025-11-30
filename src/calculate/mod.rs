@@ -37,6 +37,52 @@ fn kahan_sum(triangles: &[Triangle]) -> f64 {
 }
 
 pub fn scale(triangles: &mut [Triangle], new_diagonal: f32) -> anyhow::Result<(), anyhow::Error> {
+    let [min_vertex, max_vertex] = bounds(triangles)?;
+
+    let dx = max_vertex.0 - min_vertex.0;
+    let dy = max_vertex.1 - min_vertex.1;
+    let dz = max_vertex.2 - min_vertex.2;
+
+    // diagonal length of the current bounding box (using euclidean distance)
+    let current_diagonal = (dx * dx + dy * dy + dz * dz).sqrt();
+    if current_diagonal == 0.0 {
+        return Err(anyhow::anyhow!("mesh has 0 dimensions"));
+    }
+
+    let center_x = min_vertex.0 + (dx / 2.0);
+    let center_y = min_vertex.1 + (dy / 2.0);
+    let center_z = min_vertex.2 + (dz / 2.0);
+
+    let scale_factor = new_diagonal / current_diagonal;
+
+    triangles.par_iter_mut().for_each(|triangle| {
+        for vertex in &mut triangle.vertices {
+            vertex.0 = (vertex.0 - center_x) * scale_factor + center_x;
+            vertex.1 = (vertex.1 - center_y) * scale_factor + center_y;
+            vertex.2 = (vertex.2 - center_z) * scale_factor + center_z;
+        }
+    });
+
+    anyhow::Ok(())
+}
+
+pub fn diagonal(triangles: &[Triangle]) -> anyhow::Result<f32, anyhow::Error> {
+    let [min_vertex, max_vertex] = bounds(triangles)?;
+
+    let dx = max_vertex.0 - min_vertex.0;
+    let dy = max_vertex.1 - min_vertex.1;
+    let dz = max_vertex.2 - min_vertex.2;
+
+    // diagonal length of the current bounding box (using euclidean distance)
+    let current_diagonal = (dx * dx + dy * dy + dz * dz).sqrt();
+    if current_diagonal == 0.0 {
+        return Err(anyhow::anyhow!("mesh has 0 dimensions"));
+    }
+
+    anyhow::Ok(current_diagonal)
+}
+
+fn bounds(triangles: &[Triangle]) -> anyhow::Result<[(f32, f32, f32); 2], anyhow::Error> {
     if triangles.is_empty() {
         return Err(anyhow::anyhow!("No triangles provided"));
     }
@@ -89,29 +135,5 @@ pub fn scale(triangles: &mut [Triangle], new_diagonal: f32) -> anyhow::Result<()
             },
         );
 
-    let dx = max_vertex.0 - min_vertex.0;
-    let dy = max_vertex.1 - min_vertex.1;
-    let dz = max_vertex.2 - min_vertex.2;
-
-    // diagonal length of the current bounding box (using euclidean distance)
-    let current_diagonal = (dx * dx + dy * dy + dz * dz).sqrt();
-    if current_diagonal == 0.0 {
-        return Err(anyhow::anyhow!("mesh has 0 dimensions"));
-    }
-
-    let center_x = min_vertex.0 + (dx / 2.0);
-    let center_y = min_vertex.1 + (dy / 2.0);
-    let center_z = min_vertex.2 + (dz / 2.0);
-
-    let scale_factor = new_diagonal / current_diagonal;
-
-    triangles.par_iter_mut().for_each(|triangle| {
-        for vertex in &mut triangle.vertices {
-            vertex.0 = (vertex.0 - center_x) * scale_factor + center_x;
-            vertex.1 = (vertex.1 - center_y) * scale_factor + center_y;
-            vertex.2 = (vertex.2 - center_z) * scale_factor + center_z;
-        }
-    });
-
-    anyhow::Ok(())
+    anyhow::Ok([min_vertex, max_vertex])
 }
