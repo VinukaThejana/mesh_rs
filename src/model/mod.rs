@@ -1,9 +1,7 @@
 pub mod obj;
 pub mod stl;
 
-use std::any;
-
-use nalgebra::Vector3;
+use nalgebra::{ComplexField, Vector3};
 
 pub const MAX_TRIANGLES: u32 = 1_000_000;
 
@@ -30,6 +28,19 @@ impl Vec3 {
 
     pub fn is_finite(self) -> bool {
         self.0.is_finite() && self.1.is_finite() && self.2.is_finite()
+    }
+
+    pub fn length(self) -> f32 {
+        (self.0 * self.0 + self.1 * self.1 + self.2 * self.2).sqrt()
+    }
+
+    pub fn normalize(self) -> Vec3 {
+        let len = self.length();
+        if len > 0.0 {
+            Vec3(self.0 / len, self.1 / len, self.2 / len)
+        } else {
+            Vec3(0.0, 0.0, 0.0)
+        }
     }
 }
 

@@ -6,6 +6,7 @@
 // 84-end      | triangle data // INFO: (50 bytes per triangle)
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use nalgebra::ComplexField;
 
 use crate::model::{MAX_TRIANGLES, MeshParser, Triangle, Vec3};
 use std::{
@@ -45,11 +46,22 @@ impl MeshParser for STlParser {
 
         // write each triangle
         for triangle in triangles {
+            let v0 = triangle.vertices[0];
+            let v1 = triangle.vertices[1];
+            let v2 = triangle.vertices[2];
+
+            // edges, vectors from v0 to v1 and v0 to v2
+            let edge1 = v1.substraction(v0);
+            let edge2 = v2.substraction(v0);
+
+            // cross product to get the normal vector
+            // and converting it to a unit vector
+            let normal = edge1.cross(edge2).normalize();
+
             // normal vector (3 * 4 bytes, (x, y, z))
-            // we write a zero normal vector, as it can be recalculated by most software
-            writer.write_f32::<LittleEndian>(0.0)?; // normal vector x
-            writer.write_f32::<LittleEndian>(0.0)?; // normal vector y
-            writer.write_f32::<LittleEndian>(0.0)?; // normal vector z
+            writer.write_f32::<LittleEndian>(normal.0)?; // normal vector x
+            writer.write_f32::<LittleEndian>(normal.1)?; // normal vector y
+            writer.write_f32::<LittleEndian>(normal.2)?; // normal vector z
 
             // vertices of the triangle
             for vertex in &triangle.vertices {
