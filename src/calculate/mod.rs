@@ -1,6 +1,6 @@
 pub mod triangulation;
 
-use crate::model::Triangle;
+use crate::model::{Triangle, indexed_mesh::IndexedMesh};
 use core::f32;
 use rayon::prelude::*;
 
@@ -36,34 +36,48 @@ fn kahan_sum(triangles: &[Triangle]) -> f64 {
     sum
 }
 
-pub fn scale(triangles: &mut [Triangle], new_diagonal: f32) -> anyhow::Result<(), anyhow::Error> {
-    let [min_vertex, max_vertex] = bounds(triangles)?;
+pub fn scale(
+    triangles: &[Triangle],
+    new_diagonal: f32,
+) -> anyhow::Result<Vec<Triangle>, anyhow::Error> {
+    // create an indexed mesh for efficient scaling
+    let mut mesh = IndexedMesh::from_triangles(triangles);
+
+    let (min_vertex, max_vertex) = mesh.vertices.iter().fold(
+        (
+            (f32::MAX, f32::MAX, f32::MAX),
+            (f32::MIN, f32::MIN, f32::MIN),
+        ),
+        |acc, v| {
+            (
+                (acc.0.0.min(v.0), acc.0.1.min(v.1), acc.0.2.min(v.2)),
+                (acc.1.0.max(v.0), acc.1.1.max(v.1), acc.1.2.max(v.2)),
+            )
+        },
+    );
 
     let dx = max_vertex.0 - min_vertex.0;
     let dy = max_vertex.1 - min_vertex.1;
     let dz = max_vertex.2 - min_vertex.2;
 
-    // diagonal length of the current bounding box (using euclidean distance)
     let current_diagonal = (dx * dx + dy * dy + dz * dz).sqrt();
     if current_diagonal == 0.0 {
         return Err(anyhow::anyhow!("mesh has 0 dimensions"));
     }
 
-    let center_x = min_vertex.0 + (dx / 2.0);
-    let center_y = min_vertex.1 + (dy / 2.0);
-    let center_z = min_vertex.2 + (dz / 2.0);
+    let center_x = (min_vertex.0 + max_vertex.0) / 2.0;
+    let center_y = (min_vertex.1 + max_vertex.1) / 2.0;
+    let center_z = (min_vertex.2 + max_vertex.2) / 2.0;
 
     let scale_factor = new_diagonal / current_diagonal;
 
-    triangles.par_iter_mut().for_each(|triangle| {
-        for vertex in &mut triangle.vertices {
-            vertex.0 = (vertex.0 - center_x) * scale_factor + center_x;
-            vertex.1 = (vertex.1 - center_y) * scale_factor + center_y;
-            vertex.2 = (vertex.2 - center_z) * scale_factor + center_z;
-        }
+    mesh.vertices.par_iter_mut().for_each(|vertex| {
+        vertex.0 = (vertex.0 - center_x) * scale_factor + center_x;
+        vertex.1 = (vertex.1 - center_y) * scale_factor + center_y;
+        vertex.2 = (vertex.2 - center_z) * scale_factor + center_z;
     });
 
-    anyhow::Ok(())
+    anyhow::Ok(mesh.to_triangles())
 }
 
 pub fn diagonal(triangles: &[Triangle]) -> anyhow::Result<f32, anyhow::Error> {

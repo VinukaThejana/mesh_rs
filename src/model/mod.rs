@@ -1,7 +1,8 @@
+pub mod indexed_mesh;
 pub mod obj;
 pub mod stl;
 
-use nalgebra::{ComplexField, Vector3};
+use nalgebra::Vector3;
 
 pub const MAX_TRIANGLES: u32 = 1_000_000;
 
@@ -61,7 +62,7 @@ impl Vec2 {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct Triangle {
     pub vertices: [Vec3; 3],
 }

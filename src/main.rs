@@ -142,7 +142,7 @@ fn main() -> anyhow::Result<()> {
                 target_diagonal
             );
 
-            calculate::scale(&mut triangles, target_diagonal)?;
+            let triangles = calculate::scale(&triangles, target_diagonal)?;
 
             let output_path = match output {
                 Some(p) => p,

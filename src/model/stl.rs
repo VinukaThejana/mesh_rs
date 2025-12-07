@@ -8,7 +8,7 @@
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use nalgebra::ComplexField;
 
-use crate::model::{MAX_TRIANGLES, MeshParser, Triangle, Vec3};
+use crate::model::{MAX_TRIANGLES, MeshParser, Triangle, Vec3, indexed_mesh::IndexedMesh};
 use std::{
     fs::File,
     io::{BufWriter, Cursor, Seek, SeekFrom, Write},
@@ -78,6 +78,64 @@ impl MeshParser for STlParser {
         writer.flush()?;
         anyhow::Ok(())
     }
+}
+
+pub fn write_indexed_mesh(
+    path: &std::path::Path,
+    mesh: &IndexedMesh,
+) -> anyhow::Result<(), anyhow::Error> {
+    use byteorder::{LittleEndian, WriteBytesExt};
+    use std::fs::File;
+    use std::io::{BufWriter, Write};
+
+    let file = File::create(path)?;
+    let mut writer = BufWriter::new(file);
+
+    let mut header = [0u8; 80];
+    let signature = b"created by mesh_rs";
+    header[..signature.len()].copy_from_slice(signature);
+    writer.write_all(&header)?;
+
+    if mesh.faces.len() > u32::MAX as usize {
+        return Err(anyhow::anyhow!("too many triangles to write to STL file"));
+    }
+    writer.write_u32::<LittleEndian>(mesh.faces.len() as u32)?;
+
+    // Write each face directly from the indexed representation
+    for face in &mesh.faces {
+        // Get vertices from the index - these are the EXACT same float values
+        let v0 = mesh.vertices[face[0]];
+        let v1 = mesh.vertices[face[1]];
+        let v2 = mesh.vertices[face[2]];
+
+        // Calculate normal
+        let edge1 = v1.substraction(v0);
+        let edge2 = v2.substraction(v0);
+        let normal = edge1.cross(edge2).normalize();
+
+        // Write normal
+        writer.write_f32::<LittleEndian>(normal.0)?;
+        writer.write_f32::<LittleEndian>(normal.1)?;
+        writer.write_f32::<LittleEndian>(normal.2)?;
+
+        // Write vertices - CRITICAL: These are bit-exact for shared vertices!
+        writer.write_f32::<LittleEndian>(v0.0)?;
+        writer.write_f32::<LittleEndian>(v0.1)?;
+        writer.write_f32::<LittleEndian>(v0.2)?;
+
+        writer.write_f32::<LittleEndian>(v1.0)?;
+        writer.write_f32::<LittleEndian>(v1.1)?;
+        writer.write_f32::<LittleEndian>(v1.2)?;
+
+        writer.write_f32::<LittleEndian>(v2.0)?;
+        writer.write_f32::<LittleEndian>(v2.1)?;
+        writer.write_f32::<LittleEndian>(v2.2)?;
+
+        writer.write_u16::<LittleEndian>(0)?;
+    }
+
+    writer.flush()?;
+    anyhow::Ok(())
 }
 
 pub fn validate_bytes(bytes: &[u8]) -> bool {
@@ -178,9 +236,6 @@ fn parse_binary(bytes: &[u8]) -> anyhow::Result<Vec<Triangle>, anyhow::Error> {
             vertices: [v0, v1, v2],
         };
 
-        if !triangle.is_valid() {
-            continue;
-        }
         triangles.push(triangle);
     }
 
