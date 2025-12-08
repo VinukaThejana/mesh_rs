@@ -5,6 +5,13 @@ on:
     tags:
       - 'v*.*.*'
 
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag to release, for example v1.2.3'
+        required: false
+        type: string
+
 permissions:
   contents: write
 
@@ -21,7 +28,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache cargo registery and build
-        uses: actions/checkout@v4
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
@@ -32,10 +39,21 @@ jobs:
       - name: Build and release binary
         run: cargo build --release
 
+      - name: Determine tag name
+        id: tag
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            echo "tag=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: Release ${{ steps.tag.outputs.tag }}
           files: |
-            target/release/*
+            target/release/mesh_rs
         env:
-          GITHUB_TOKEN: ${{ secrets.TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
