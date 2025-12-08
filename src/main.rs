@@ -2,7 +2,7 @@ use std::{fs::OpenOptions, io::Read, path::PathBuf};
 
 use mesh_rs::{
     calculate,
-    model::{self, MeshParser},
+    model::{self, Mesh, MeshParser, indexed_mesh::IndexedMesh},
 };
 
 use clap::{Parser, Subcommand};
@@ -98,18 +98,20 @@ fn main() -> anyhow::Result<()> {
         })
         .ok_or_else(|| anyhow::anyhow!("unsupported file format"))?;
 
-    let mut triangles = match format {
+    let triangles = match format {
         model::Format::STL => model::stl::STlParser::parse(&buffer)?,
         model::Format::OBJ => model::obj::OBJParser::parse(&buffer)?,
     };
 
+    let mut mesh = IndexedMesh::from_triangles(&triangles);
+
     match cli.command {
         Commands::Diagonal => {
-            let diagonal = calculate::diagonal(&triangles)?;
+            let diagonal = mesh.diagonal()?;
             println!("{} {:.4}", "Diagonal:".green().bold(), diagonal);
         }
         Commands::Volume => {
-            let volume = calculate::volume(&triangles);
+            let volume = calculate::volume(&mesh);
             println!("{} {:.4}", "Volume:".green().bold(), volume);
         }
         Commands::Triangles => {
@@ -120,8 +122,8 @@ fn main() -> anyhow::Result<()> {
             );
         }
         Commands::Stats => {
-            let diagonal = calculate::diagonal(&triangles)?;
-            let volume = calculate::volume(&triangles);
+            let diagonal = calculate::diagonal(&mesh)?;
+            let volume = calculate::volume(&mesh);
 
             println!("{}", "--- Statistics ---".yellow().bold());
             println!("{:<15} {}", "File:", cli.input.display());
@@ -134,7 +136,7 @@ fn main() -> anyhow::Result<()> {
             target_diagonal,
             output,
         } => {
-            let diagonal = calculate::diagonal(&triangles)?;
+            let diagonal = calculate::diagonal(&mesh)?;
             println!(
                 "{} {:.4} -> {:.4}",
                 "Scaling:".cyan().bold(),
@@ -142,7 +144,7 @@ fn main() -> anyhow::Result<()> {
                 target_diagonal
             );
 
-            let triangles = calculate::scale(&triangles, target_diagonal)?;
+            let triangles = calculate::scale(&mut mesh, target_diagonal)?;
 
             let output_path = match output {
                 Some(p) => p,

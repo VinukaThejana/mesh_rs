@@ -2,124 +2,10 @@ pub mod indexed_mesh;
 pub mod obj;
 pub mod stl;
 
+use crate::model::indexed_mesh::IndexedMesh;
 use nalgebra::Vector3;
 
 pub const MAX_TRIANGLES: u32 = 1_000_000;
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Vec3(pub f32, pub f32, pub f32);
-
-impl Vec3 {
-    pub fn substraction(self, other: Vec3) -> Vec3 {
-        Vec3(self.0 - other.0, self.1 - other.1, self.2 - other.2)
-    }
-
-    pub fn cross(self, other: Vec3) -> Vec3 {
-        Vec3(
-            // basically the determinant of a 3x3 matrix
-            self.1 * other.2 - self.2 * other.1,
-            self.2 * other.0 - self.0 * other.2,
-            self.0 * other.1 - self.1 * other.0,
-        )
-    }
-
-    pub fn dot(self, other: Vec3) -> f32 {
-        self.0 * other.0 + self.1 * other.1 + self.2 * other.2
-    }
-
-    pub fn is_finite(self) -> bool {
-        self.0.is_finite() && self.1.is_finite() && self.2.is_finite()
-    }
-
-    pub fn length(self) -> f32 {
-        (self.0 * self.0 + self.1 * self.1 + self.2 * self.2).sqrt()
-    }
-
-    pub fn normalize(self) -> Vec3 {
-        let len = self.length();
-        if len > 0.0 {
-            Vec3(self.0 / len, self.1 / len, self.2 / len)
-        } else {
-            Vec3(0.0, 0.0, 0.0)
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Vec2(pub f32, pub f32);
-
-impl Vec2 {
-    pub fn substraction(self, other: Vec2) -> Self {
-        Vec2(self.0 - other.0, self.1 - other.1)
-    }
-
-    pub fn cross(self, other: Vec2) -> f32 {
-        self.0 * other.1 - self.1 * other.0
-    }
-
-    pub fn dot(self, other: Vec2) -> f32 {
-        self.0 * other.0 + self.1 * other.1
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct Triangle {
-    pub vertices: [Vec3; 3],
-}
-
-impl From<[f32; 3]> for Vec3 {
-    fn from(arr: [f32; 3]) -> Self {
-        Vec3(arr[0], arr[1], arr[2])
-    }
-}
-
-impl From<Vec3> for Vector3<f64> {
-    fn from(v: Vec3) -> Self {
-        Vector3::new(v.0.into(), v.1.into(), v.2.into())
-    }
-}
-
-impl Triangle {
-    pub fn signed_volume(&self) -> f64 {
-        let a: Vector3<f64> = self.vertices[0].into();
-        let b: Vector3<f64> = self.vertices[1].into();
-        let c: Vector3<f64> = self.vertices[2].into();
-
-        (a.dot(&b.cross(&c))) / 6.0
-    }
-
-    pub fn is_valid(&self) -> bool {
-        let v0 = self.vertices[0];
-        let v1 = self.vertices[1];
-        let v2 = self.vertices[2];
-
-        if !v0.is_finite() || !v1.is_finite() || !v2.is_finite() {
-            return false;
-        }
-        if v0 == v1 || v1 == v2 || v2 == v0 {
-            return false;
-        }
-
-        // zero area check
-        // creates two edges making v0 the origin
-        let a = v1.substraction(v0);
-        let b = v2.substraction(v0);
-
-        // cross product of the two edges
-        // gives a vector orthogonal to the triangle
-        // whose length is proportional to the area of the triangle
-        let cross = a.cross(b);
-        // area squared is the dot product of the cross product with itself
-        let area_sq = cross.dot(cross);
-
-        area_sq > 1e-12
-    }
-}
-
-pub trait MeshParser {
-    fn parse(bytes: &[u8]) -> anyhow::Result<Vec<Triangle>, anyhow::Error>;
-    fn write(path: &std::path::Path, triangles: &[Triangle]) -> anyhow::Result<(), anyhow::Error>;
-}
 
 #[derive(Debug)]
 pub enum Format {
@@ -222,5 +108,146 @@ impl Format {
             Self::STL => "stl",
             Self::OBJ => "obj",
         }
+    }
+}
+
+pub trait MeshParser {
+    fn parse(bytes: &[u8]) -> anyhow::Result<Vec<Triangle>, anyhow::Error>;
+    fn write(path: &std::path::Path, triangles: &[Triangle]) -> anyhow::Result<(), anyhow::Error>;
+}
+
+pub trait Mesh {
+    fn bounds(&self) -> anyhow::Result<[(f32, f32, f32); 2], anyhow::Error>;
+    fn diagonal(&self) -> anyhow::Result<f32, anyhow::Error>;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Vec3(pub f32, pub f32, pub f32);
+
+impl Vec3 {
+    pub fn substraction(self, other: Vec3) -> Vec3 {
+        Vec3(self.0 - other.0, self.1 - other.1, self.2 - other.2)
+    }
+
+    pub fn cross(self, other: Vec3) -> Vec3 {
+        Vec3(
+            // basically the determinant of a 3x3 matrix
+            self.1 * other.2 - self.2 * other.1,
+            self.2 * other.0 - self.0 * other.2,
+            self.0 * other.1 - self.1 * other.0,
+        )
+    }
+
+    pub fn dot(self, other: Vec3) -> f32 {
+        self.0 * other.0 + self.1 * other.1 + self.2 * other.2
+    }
+
+    pub fn is_finite(self) -> bool {
+        self.0.is_finite() && self.1.is_finite() && self.2.is_finite()
+    }
+
+    pub fn length(self) -> f32 {
+        (self.0 * self.0 + self.1 * self.1 + self.2 * self.2).sqrt()
+    }
+
+    pub fn normalize(self) -> Vec3 {
+        let len = self.length();
+        if len > 0.0 {
+            Vec3(self.0 / len, self.1 / len, self.2 / len)
+        } else {
+            Vec3(0.0, 0.0, 0.0)
+        }
+    }
+}
+
+impl From<[f32; 3]> for Vec3 {
+    fn from(arr: [f32; 3]) -> Self {
+        Vec3(arr[0], arr[1], arr[2])
+    }
+}
+
+impl From<Vec3> for Vector3<f64> {
+    fn from(v: Vec3) -> Self {
+        Vector3::new(v.0.into(), v.1.into(), v.2.into())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Vec2(pub f32, pub f32);
+
+impl Vec2 {
+    pub fn substraction(self, other: Vec2) -> Self {
+        Vec2(self.0 - other.0, self.1 - other.1)
+    }
+
+    pub fn cross(self, other: Vec2) -> f32 {
+        self.0 * other.1 - self.1 * other.0
+    }
+
+    pub fn dot(self, other: Vec2) -> f32 {
+        self.0 * other.0 + self.1 * other.1
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Triangle {
+    pub vertices: [Vec3; 3],
+}
+
+impl From<&IndexedMesh> for Vec<Triangle> {
+    fn from(mesh: &IndexedMesh) -> Self {
+        mesh.faces
+            .iter()
+            .map(|face| Triangle {
+                vertices: [
+                    mesh.vertices[face[0]],
+                    mesh.vertices[face[1]],
+                    mesh.vertices[face[2]],
+                ],
+            })
+            .collect()
+    }
+}
+
+impl From<&mut IndexedMesh> for Vec<Triangle> {
+    fn from(mesh: &mut IndexedMesh) -> Self {
+        Vec::from(&*mesh)
+    }
+}
+
+impl Triangle {
+    pub fn signed_volume(&self) -> f64 {
+        let a: Vector3<f64> = self.vertices[0].into();
+        let b: Vector3<f64> = self.vertices[1].into();
+        let c: Vector3<f64> = self.vertices[2].into();
+
+        (a.dot(&b.cross(&c))) / 6.0
+    }
+
+    pub fn is_valid(&self) -> bool {
+        let v0 = self.vertices[0];
+        let v1 = self.vertices[1];
+        let v2 = self.vertices[2];
+
+        if !v0.is_finite() || !v1.is_finite() || !v2.is_finite() {
+            return false;
+        }
+        if v0 == v1 || v1 == v2 || v2 == v0 {
+            return false;
+        }
+
+        // zero area check
+        // creates two edges making v0 the origin
+        let a = v1.substraction(v0);
+        let b = v2.substraction(v0);
+
+        // cross product of the two edges
+        // gives a vector orthogonal to the triangle
+        // whose length is proportional to the area of the triangle
+        let cross = a.cross(b);
+        // area squared is the dot product of the cross product with itself
+        let area_sq = cross.dot(cross);
+
+        area_sq > 1e-12
     }
 }

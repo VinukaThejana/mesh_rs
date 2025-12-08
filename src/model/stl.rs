@@ -5,10 +5,8 @@
 // 80-83       | // 4 byte unsigned int (number of triangles)
 // 84-end      | triangle data // INFO: (50 bytes per triangle)
 
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use nalgebra::ComplexField;
-
 use crate::model::{MAX_TRIANGLES, MeshParser, Triangle, Vec3, indexed_mesh::IndexedMesh};
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::{
     fs::File,
     io::{BufWriter, Cursor, Seek, SeekFrom, Write},
@@ -195,9 +193,7 @@ fn parse_binary(bytes: &[u8]) -> anyhow::Result<Vec<Triangle>, anyhow::Error> {
     let data_len = bytes.len().saturating_sub(84);
     let physical_count = data_len / 50;
 
-    let triangle_count = if declared_count == 0 {
-        physical_count
-    } else if declared_count > physical_count {
+    let triangle_count = if declared_count == 0 || declared_count > physical_count {
         physical_count
     } else {
         declared_count

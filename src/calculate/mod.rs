@@ -1,10 +1,11 @@
 pub mod triangulation;
 
-use crate::model::{Triangle, indexed_mesh::IndexedMesh};
+use crate::model::{Mesh, Triangle, indexed_mesh::IndexedMesh};
 use core::f32;
 use rayon::prelude::*;
 
-pub fn volume(triangles: &[Triangle]) -> f64 {
+pub fn volume(mesh: &IndexedMesh) -> f64 {
+    let triangles: Vec<Triangle> = mesh.into();
     if triangles.is_empty() {
         return 0.0;
     }
@@ -15,7 +16,7 @@ pub fn volume(triangles: &[Triangle]) -> f64 {
     let total_volume: f64 = if triangles.len() >= PARALLEL_THRESHOLD {
         triangles.par_chunks(CHUNK_SIZE).map(kahan_sum).sum()
     } else {
-        kahan_sum(triangles)
+        kahan_sum(&triangles)
     };
 
     total_volume.abs()
@@ -37,24 +38,10 @@ fn kahan_sum(triangles: &[Triangle]) -> f64 {
 }
 
 pub fn scale(
-    triangles: &[Triangle],
+    mesh: &mut IndexedMesh,
     new_diagonal: f32,
 ) -> anyhow::Result<Vec<Triangle>, anyhow::Error> {
-    // create an indexed mesh for efficient scaling
-    let mut mesh = IndexedMesh::from_triangles(triangles);
-
-    let (min_vertex, max_vertex) = mesh.vertices.iter().fold(
-        (
-            (f32::MAX, f32::MAX, f32::MAX),
-            (f32::MIN, f32::MIN, f32::MIN),
-        ),
-        |acc, v| {
-            (
-                (acc.0.0.min(v.0), acc.0.1.min(v.1), acc.0.2.min(v.2)),
-                (acc.1.0.max(v.0), acc.1.1.max(v.1), acc.1.2.max(v.2)),
-            )
-        },
-    );
+    let [min_vertex, max_vertex] = mesh.bounds()?;
 
     let dx = max_vertex.0 - min_vertex.0;
     let dy = max_vertex.1 - min_vertex.1;
@@ -77,77 +64,9 @@ pub fn scale(
         vertex.2 = (vertex.2 - center_z) * scale_factor + center_z;
     });
 
-    anyhow::Ok(mesh.to_triangles())
+    anyhow::Ok(mesh.into())
 }
 
-pub fn diagonal(triangles: &[Triangle]) -> anyhow::Result<f32, anyhow::Error> {
-    let [min_vertex, max_vertex] = bounds(triangles)?;
-
-    let dx = max_vertex.0 - min_vertex.0;
-    let dy = max_vertex.1 - min_vertex.1;
-    let dz = max_vertex.2 - min_vertex.2;
-
-    // diagonal length of the current bounding box (using euclidean distance)
-    let current_diagonal = (dx * dx + dy * dy + dz * dz).sqrt();
-    if current_diagonal == 0.0 {
-        return Err(anyhow::anyhow!("mesh has 0 dimensions"));
-    }
-
-    anyhow::Ok(current_diagonal)
-}
-
-fn bounds(triangles: &[Triangle]) -> anyhow::Result<[(f32, f32, f32); 2], anyhow::Error> {
-    if triangles.is_empty() {
-        return Err(anyhow::anyhow!("No triangles provided"));
-    }
-
-    let (min_vertex, max_vertex) = triangles
-        .par_iter()
-        .fold(
-            || {
-                (
-                    (f32::MAX, f32::MAX, f32::MAX),
-                    (f32::MIN, f32::MIN, f32::MIN),
-                )
-            },
-            |acc, triangle| {
-                let mut local_min = acc.0;
-                let mut local_max = acc.1;
-
-                for vertex in &triangle.vertices {
-                    local_min.0 = local_min.0.min(vertex.0);
-                    local_min.1 = local_min.1.min(vertex.1);
-                    local_min.2 = local_min.2.min(vertex.2);
-
-                    local_max.0 = local_max.0.max(vertex.0);
-                    local_max.1 = local_max.1.max(vertex.1);
-                    local_max.2 = local_max.2.max(vertex.2);
-                }
-                (local_min, local_max)
-            },
-        )
-        .reduce(
-            || {
-                (
-                    (f32::MAX, f32::MAX, f32::MAX),
-                    (f32::MIN, f32::MIN, f32::MIN),
-                )
-            },
-            |acc1, acc2| {
-                (
-                    (
-                        acc1.0.0.min(acc2.0.0),
-                        acc1.0.1.min(acc2.0.1),
-                        acc1.0.2.min(acc2.0.2),
-                    ),
-                    (
-                        acc1.1.0.max(acc2.1.0),
-                        acc1.1.1.max(acc2.1.1),
-                        acc1.1.2.max(acc2.1.2),
-                    ),
-                )
-            },
-        );
-
-    anyhow::Ok([min_vertex, max_vertex])
+pub fn diagonal(mesh: &IndexedMesh) -> anyhow::Result<f32, anyhow::Error> {
+    mesh.diagonal()
 }
