@@ -1,7 +1,12 @@
 [package]
 name = "mesh_rs"
-version = "0.1.0"
+version = "1.0.1"
 edition = "2024"
+authors = ["VinukaThejana"]
+description = "A Rust library for 3D mesh processing and analysis."
+license = "MIT"
+license-file = "LICENSE"
+keywords = ["3dprinting", "mesh", "stl", "obj", "3dscaling"]
 
 [dependencies]
 anyhow = "1.0.100"
@@ -11,4 +16,3 @@ colored = "3.0.0"
 nalgebra = "0.34.1"
 num-format = "0.4.4"
 rayon = "1.11.0"
-stl_io = "0.10.0"
