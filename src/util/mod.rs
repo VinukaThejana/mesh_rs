@@ -21,5 +21,5 @@ pub fn warn_units(file_name: &str, volume: f64, diagonal: f32) {
         "[Warn]".yellow().bold(),
         suggested_diagonal
     );
-    eprintln!("       mesh_rs scale {} {}", file_name, suggested_diagonal);
+    eprintln!("       mesh_rs {} scale {}", file_name, suggested_diagonal);
 }
