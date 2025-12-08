@@ -131,7 +131,10 @@ impl MeshParser for OBJParser {
         Ok(result)
     }
 
-    fn write(path: &std::path::Path, triangles: &[Triangle]) -> anyhow::Result<(), anyhow::Error> {
+    fn write(
+        _path: &std::path::Path,
+        _triangles: &[Triangle],
+    ) -> anyhow::Result<(), anyhow::Error> {
         todo!()
     }
 }
