@@ -3,7 +3,7 @@
 // v x y z          | vertex position
 // vt u v           | texture coordinate
 // vn x y z         | vertex normal
-// f v1 v2 v3       | face (triangle) - can reference v/vt/vn indices
+// f v1 v2 v3       | face (triangle) - can reference v/vt/vn indices (starts at 1)
 // f v1/vt1 v2/vt2 v3/vt3           | face with texture coords
 // f v1/vt1/vn1 v2/vt2/vn2 v3/vt3/vn3 | face with texture and normals
 // f v1//vn1 v2//vn2 v3//vn3        | face with normals only
@@ -14,10 +14,13 @@
 // usemtl name      | use material
 use crate::{
     calculate::triangulation::triangulate,
-    model::{MeshParser, Triangle, Vec3},
+    model::{MeshParser, Triangle, Vec3, indexed_mesh::IndexedMesh},
 };
 use rayon::prelude::*;
-use std::io::{BufRead, Cursor};
+use std::{
+    fs::File,
+    io::{BufRead, BufWriter, Cursor, Write},
+};
 
 pub fn validate_bytes(bytes: &[u8]) -> bool {
     let Ok(content) = std::str::from_utf8(bytes) else {
@@ -131,10 +134,29 @@ impl MeshParser for OBJParser {
         Ok(result)
     }
 
-    fn write(
-        _path: &std::path::Path,
-        _triangles: &[Triangle],
-    ) -> anyhow::Result<(), anyhow::Error> {
-        todo!()
+    fn write(path: &std::path::Path, triangles: &[Triangle]) -> anyhow::Result<(), anyhow::Error> {
+        let mesh = IndexedMesh::from_triangles(triangles);
+
+        let file = File::create(path)?;
+        let mut writer = BufWriter::new(file);
+
+        writeln!(writer, "# created by mesh_rs")?;
+        writeln!(writer, "o Mesh")?;
+
+        //  format v x y z
+        //  we use string formatting ({:.6}) to write human readable numbers
+        for vertex in &mesh.vertices {
+            writeln!(writer, "v {:.6} {:.6} {:.6}", vertex.0, vertex.1, vertex.2)?;
+        }
+
+        // format "f v1 v2 v3"
+        for face in &mesh.faces {
+            // OBJ files are using 1-based indexing for vertex indices
+            // (see the OBJ specification on top)
+            writeln!(writer, "f {} {} {}", face[0] + 1, face[1] + 1, face[2] + 1)?;
+        }
+
+        writer.flush()?;
+        anyhow::Ok(())
     }
 }
