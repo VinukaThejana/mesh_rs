@@ -3,6 +3,7 @@ use std::{fs::OpenOptions, io::Read, path::PathBuf};
 use mesh_rs::{
     calculate,
     model::{self, Mesh, MeshParser, indexed_mesh::IndexedMesh},
+    util::warn_units,
 };
 
 use clap::{Parser, Subcommand};
@@ -129,8 +130,10 @@ fn main() -> anyhow::Result<()> {
             println!("{:<15} {}", "File:", cli.input.display());
             println!("{:<15} {:?}", "Format:", format);
             println!("{:<15} {}", "Triangles:", triangles.len());
-            println!("{:<15} {:.4}", "Diagonal:", diagonal);
-            println!("{:<15} {:.4}", "Volume:", volume);
+            println!("{:<15} {}", "Diagonal:", diagonal);
+            println!("{:<15} {}", "Volume:", volume);
+
+            warn_units(cli.input.to_str().unwrap(), volume, diagonal);
         }
         Commands::Scale {
             target_diagonal,
