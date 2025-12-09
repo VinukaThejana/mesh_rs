@@ -3,11 +3,11 @@ use std::{fs::OpenOptions, io::Read, path::PathBuf};
 use mesh_rs::{
     calculate,
     model::{self, Mesh, MeshParser, indexed_mesh::IndexedMesh},
+    ui,
     util::warn_units,
 };
 
 use clap::{Parser, Subcommand};
-use colored::*;
 
 #[derive(Parser)]
 #[command(name = "Mesh tool")]
@@ -76,11 +76,7 @@ enum Commands {
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     if !cli.input.exists() {
-        eprintln!(
-            "{} Input file does not exist: {:?}",
-            "Error:".red().bold(),
-            cli.input
-        );
+        ui::print_error(&format!("Input file does not exist: {:?}", cli.input));
         std::process::exit(1);
     }
 
@@ -109,29 +105,25 @@ fn main() -> anyhow::Result<()> {
     match cli.command {
         Commands::Diagonal => {
             let diagonal = mesh.diagonal()?;
-            println!("{} {:.4}", "Diagonal:".green().bold(), diagonal);
+            ui::print_kv("Diagonal", format!("{:.4}", diagonal));
         }
         Commands::Volume => {
             let volume = calculate::volume(&mesh);
-            println!("{} {:.4}", "Volume:".green().bold(), volume);
+            ui::print_kv("Volume", format!("{:.4}", volume));
         }
         Commands::Triangles => {
-            println!(
-                "{} Parsed {} triangles",
-                "Success:".green().bold(),
-                triangles.len()
-            );
+            ui::print_success(&format!("Parsed {} triangles", triangles.len()));
         }
         Commands::Stats => {
             let diagonal = calculate::diagonal(&mesh)?;
             let volume = calculate::volume(&mesh);
 
-            println!("{}", "--- Statistics ---".yellow().bold());
-            println!("{:<15} {}", "File:", cli.input.display());
-            println!("{:<15} {:?}", "Format:", format);
-            println!("{:<15} {}", "Triangles:", triangles.len());
-            println!("{:<15} {}", "Diagonal:", diagonal);
-            println!("{:<15} {}", "Volume:", volume);
+            ui::print_section("Statistics");
+            ui::print_kv("File", cli.input.display());
+            ui::print_kv("Format", format!("{:?}", format));
+            ui::print_kv("Triangles", triangles.len());
+            ui::print_kv("Diagonal", format!("{:.4}", diagonal));
+            ui::print_kv("Volume", format!("{:.4}", volume));
 
             warn_units(cli.input.to_str().unwrap(), volume, diagonal);
         }
@@ -140,11 +132,9 @@ fn main() -> anyhow::Result<()> {
             output,
         } => {
             let diagonal = calculate::diagonal(&mesh)?;
-            println!(
-                "{} {:.4} -> {:.4}",
-                "Scaling:".cyan().bold(),
-                diagonal,
-                target_diagonal
+            ui::print_info(
+                "Scaling",
+                &format!("{:.4} -> {:.4}", diagonal, target_diagonal),
             );
 
             let triangles = calculate::scale(&mut mesh, target_diagonal)?;
@@ -166,15 +156,15 @@ fn main() -> anyhow::Result<()> {
                 }
             };
 
-            println!("{} Scaled model processed.", "Done:".green().bold());
-            println!("{} Saving to {:?}", "Output:".yellow(), output_path);
+            ui::print_success("Scaled model processed.");
+            ui::print_info("Saving to", &format!("{:?}", output_path));
 
             match format {
                 model::Format::STL => model::stl::STlParser::write(&output_path, &triangles)?,
                 model::Format::OBJ => model::obj::OBJParser::write(&output_path, &triangles)?,
             }
 
-            println!("{} File saved successfully.", "Success:".green().bold());
+            ui::print_success("File saved successfully.");
         }
     }
 

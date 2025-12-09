@@ -4,6 +4,15 @@
 // 0-79        | 80 byte header
 // 80-83       | // 4 byte unsigned int (number of triangles)
 // 84-end      | triangle data // INFO: (50 bytes per triangle)
+// each triangle:
+// ------------|----------------
+// bytes range | description
+// ------------|----------------
+// 0-11        | normal vector (3 * 4 bytes, (x, y, z))
+// 12-23       | vertex 1 (3 * 4 bytes, (x, y, z))
+// 24-35       | vertex 2 (3 * 4 bytes, (x, y, z))
+// 36-47       | vertex 3 (3 * 4 bytes, (x, y, z))
+// 48-49       | attribute byte count (2 bytes) (usually zero; padding for alignment)
 
 use crate::model::{MAX_TRIANGLES, MeshParser, Triangle, Vec3, indexed_mesh::IndexedMesh};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -206,6 +215,8 @@ fn parse_binary(bytes: &[u8]) -> anyhow::Result<Vec<Triangle>, anyhow::Error> {
 
     for _ in 0..triangle_count {
         // skip normal vector (3 * 4 bytes, (x, y, z))
+        // we can compute it ourselves if needed
+        // in counter part, some exporters write really bad normals
         cursor.seek(SeekFrom::Current(12))?;
 
         // vertices
