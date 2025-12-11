@@ -2,7 +2,7 @@ use std::{fs::OpenOptions, io::Read, path::PathBuf};
 
 use mesh_rs::{
     calculate,
-    model::{self, Mesh, MeshParser, indexed_mesh::IndexedMesh},
+    model::{self, MeshCodec, obj::ObjCodec, stl::StlCodec},
     ui,
     util::warn_units,
 };
@@ -95,16 +95,14 @@ fn main() -> anyhow::Result<()> {
         })
         .ok_or_else(|| anyhow::anyhow!("unsupported file format"))?;
 
-    let triangles = match format {
-        model::Format::STL => model::stl::STlParser::parse(&buffer)?,
-        model::Format::OBJ => model::obj::OBJParser::parse(&buffer)?,
+    let mut mesh = match format {
+        model::Format::STL => StlCodec.parse(&buffer)?,
+        model::Format::OBJ => ObjCodec.parse(&buffer)?,
     };
-
-    let mut mesh = IndexedMesh::from_triangles(&triangles);
 
     match cli.command {
         Commands::Diagonal => {
-            let diagonal = mesh.diagonal()?;
+            let diagonal = calculate::diagonal(&mesh)?;
             ui::print_kv("Diagonal", format!("{:.4}", diagonal));
         }
         Commands::Volume => {
@@ -112,16 +110,18 @@ fn main() -> anyhow::Result<()> {
             ui::print_kv("Volume", format!("{:.4}", volume));
         }
         Commands::Triangles => {
-            ui::print_success(&format!("Parsed {} triangles", triangles.len()));
+            let triangles = mesh.triangle_count();
+            ui::print_success(&format!("Parsed {} triangles", triangles));
         }
         Commands::Stats => {
             let diagonal = calculate::diagonal(&mesh)?;
             let volume = calculate::volume(&mesh);
+            let triangles = mesh.triangle_count();
 
             ui::print_section("Statistics");
             ui::print_kv("File", cli.input.display());
             ui::print_kv("Format", format!("{:?}", format));
-            ui::print_kv("Triangles", triangles.len());
+            ui::print_kv("Triangles", triangles);
             ui::print_kv("Diagonal", format!("{:.4}", diagonal));
             ui::print_kv("Volume", format!("{:.4}", volume));
 
@@ -137,7 +137,7 @@ fn main() -> anyhow::Result<()> {
                 &format!("{:.4} -> {:.4}", diagonal, target_diagonal),
             );
 
-            let triangles = calculate::scale(&mut mesh, target_diagonal)?;
+            calculate::scale(&mut mesh, target_diagonal)?;
 
             let output_path = match output {
                 Some(p) => p,
@@ -160,8 +160,8 @@ fn main() -> anyhow::Result<()> {
             ui::print_info("Saving to", &format!("{:?}", output_path));
 
             match format {
-                model::Format::STL => model::stl::STlParser::write(&output_path, &triangles)?,
-                model::Format::OBJ => model::obj::OBJParser::write(&output_path, &triangles)?,
+                model::Format::STL => StlCodec.write(&output_path, &mesh)?,
+                model::Format::OBJ => ObjCodec.write(&output_path, &mesh)?,
             }
 
             ui::print_success("File saved successfully.");
