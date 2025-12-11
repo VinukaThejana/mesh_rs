@@ -1,6 +1,6 @@
 [package]
 name = "mesh_rs"
-version = "1.0.2"
+version = "1.0.3"
 edition = "2024"
 authors = ["VinukaThejana"]
 description = "A Rust library for 3D mesh processing and analysis."

@@ -303,7 +303,7 @@ dependencies = [
 
 [[package]]
 name = "mesh_rs"
-version = "1.0.2"
+version = "1.0.3"
 dependencies = [
  "anyhow",
  "byteorder",
