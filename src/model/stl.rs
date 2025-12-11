@@ -14,17 +14,19 @@
 // 36-47       | vertex 3 (3 * 4 bytes, (x, y, z))
 // 48-49       | attribute byte count (2 bytes) (usually zero; padding for alignment)
 
-use crate::model::{MAX_TRIANGLES, MeshParser, Triangle, Vec3, indexed_mesh::IndexedMesh};
+use crate::model::{Face, MAX_TRIANGLES, Mesh, MeshCodec, Vec3};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::{
+    collections::HashMap,
     fs::File,
     io::{BufWriter, Cursor, Seek, SeekFrom, Write},
+    path::Path,
 };
 
-pub struct STlParser;
+pub struct StlCodec;
 
-impl MeshParser for STlParser {
-    fn parse(bytes: &[u8]) -> anyhow::Result<Vec<Triangle>, anyhow::Error> {
+impl MeshCodec for StlCodec {
+    fn parse(&self, bytes: &[u8]) -> anyhow::Result<Mesh> {
         if is_ascii(bytes) {
             parse_ascii(bytes)
         } else {
@@ -32,117 +34,62 @@ impl MeshParser for STlParser {
         }
     }
 
-    fn write(path: &std::path::Path, triangles: &[Triangle]) -> anyhow::Result<(), anyhow::Error> {
+    fn write(&self, path: &Path, mesh: &Mesh) -> anyhow::Result<()> {
         let file = File::create(path)?;
         let mut writer = BufWriter::new(file);
 
         // write 80 byte header
         let mut header = [0u8; 80];
-        // add a simple signature to the header
         let signature = b"created by mesh_rs";
         header[..signature.len()].copy_from_slice(signature);
         writer.write_all(&header)?;
 
-        // write the triangle count
-        // 4 bytes, u32, little-endian
-        let triangle_count = triangles.len();
-        if triangle_count > u32::MAX as usize {
-            return Err(anyhow::anyhow!("too many triangles to write to STL file"));
+        let mut triangle_count = 0;
+        // STL only supports triangular faces
+        for face in &mesh.faces {
+            if face.v.len() >= 3 {
+                triangle_count += (face.v.len() - 2) as u32;
+            }
         }
-        writer.write_u32::<LittleEndian>(triangle_count as u32)?;
+        writer.write_u32::<LittleEndian>(triangle_count)?;
 
-        // write each triangle
-        for triangle in triangles {
-            let v0 = triangle.vertices[0];
-            let v1 = triangle.vertices[1];
-            let v2 = triangle.vertices[2];
-
-            // edges, vectors from v0 to v1 and v0 to v2
-            let edge1 = v1.substraction(v0);
-            let edge2 = v2.substraction(v0);
-
-            // cross product to get the normal vector
-            // and converting it to a unit vector
-            let normal = edge1.cross(edge2).normalize();
-
-            // normal vector (3 * 4 bytes, (x, y, z))
-            writer.write_f32::<LittleEndian>(normal.0)?; // normal vector x
-            writer.write_f32::<LittleEndian>(normal.1)?; // normal vector y
-            writer.write_f32::<LittleEndian>(normal.2)?; // normal vector z
-
-            // vertices of the triangle
-            for vertex in &triangle.vertices {
-                writer.write_f32::<LittleEndian>(vertex.0)?; // vertex x
-                writer.write_f32::<LittleEndian>(vertex.1)?; // vertex y
-                writer.write_f32::<LittleEndian>(vertex.2)?; // vertex z
+        for face in &mesh.faces {
+            if face.v.len() < 3 {
+                continue;
             }
 
-            // attribute byte count (2 bytes)
-            // we write zero for no attributes
-            writer.write_u16::<LittleEndian>(0)?;
+            let v0_idx = face.v[0];
+            let v0 = mesh.vertices[v0_idx];
+
+            // Fan triangulation: Connect v0 to v(i) and v(i+1)
+            for i in 1..(face.v.len() - 1) {
+                let v1 = mesh.vertices[face.v[i]];
+                let v2 = mesh.vertices[face.v[i + 1]];
+
+                let a = v1.substraction(v0);
+                let b = v2.substraction(v0);
+                let normal = a.cross(b).normalize();
+
+                // write normal
+                writer.write_f32::<LittleEndian>(normal.0)?;
+                writer.write_f32::<LittleEndian>(normal.1)?;
+                writer.write_f32::<LittleEndian>(normal.2)?;
+
+                // write vertices
+                for vertex in &[v0, v1, v2] {
+                    writer.write_f32::<LittleEndian>(vertex.0)?;
+                    writer.write_f32::<LittleEndian>(vertex.1)?;
+                    writer.write_f32::<LittleEndian>(vertex.2)?;
+                }
+
+                // write attribute byte count (2 bytes)
+                writer.write_u16::<LittleEndian>(0)?;
+            }
         }
 
         writer.flush()?;
-        anyhow::Ok(())
+        Ok(())
     }
-}
-
-pub fn write_indexed_mesh(
-    path: &std::path::Path,
-    mesh: &IndexedMesh,
-) -> anyhow::Result<(), anyhow::Error> {
-    use byteorder::{LittleEndian, WriteBytesExt};
-    use std::fs::File;
-    use std::io::{BufWriter, Write};
-
-    let file = File::create(path)?;
-    let mut writer = BufWriter::new(file);
-
-    let mut header = [0u8; 80];
-    let signature = b"created by mesh_rs";
-    header[..signature.len()].copy_from_slice(signature);
-    writer.write_all(&header)?;
-
-    if mesh.faces.len() > u32::MAX as usize {
-        return Err(anyhow::anyhow!("too many triangles to write to STL file"));
-    }
-    writer.write_u32::<LittleEndian>(mesh.faces.len() as u32)?;
-
-    // Write each face directly from the indexed representation
-    for face in &mesh.faces {
-        // Get vertices from the index - these are the EXACT same float values
-        let v0 = mesh.vertices[face[0]];
-        let v1 = mesh.vertices[face[1]];
-        let v2 = mesh.vertices[face[2]];
-
-        // Calculate normal
-        let edge1 = v1.substraction(v0);
-        let edge2 = v2.substraction(v0);
-        let normal = edge1.cross(edge2).normalize();
-
-        // Write normal
-        writer.write_f32::<LittleEndian>(normal.0)?;
-        writer.write_f32::<LittleEndian>(normal.1)?;
-        writer.write_f32::<LittleEndian>(normal.2)?;
-
-        // Write vertices - CRITICAL: These are bit-exact for shared vertices!
-        writer.write_f32::<LittleEndian>(v0.0)?;
-        writer.write_f32::<LittleEndian>(v0.1)?;
-        writer.write_f32::<LittleEndian>(v0.2)?;
-
-        writer.write_f32::<LittleEndian>(v1.0)?;
-        writer.write_f32::<LittleEndian>(v1.1)?;
-        writer.write_f32::<LittleEndian>(v1.2)?;
-
-        writer.write_f32::<LittleEndian>(v2.0)?;
-        writer.write_f32::<LittleEndian>(v2.1)?;
-        writer.write_f32::<LittleEndian>(v2.2)?;
-
-        writer.write_u16::<LittleEndian>(0)?;
-    }
-
-    writer.flush()?;
-    anyhow::Ok(())
 }
 
 pub fn validate_bytes(bytes: &[u8]) -> bool {
@@ -187,7 +134,7 @@ fn is_ascii(bytes: &[u8]) -> bool {
     }
 }
 
-fn parse_binary(bytes: &[u8]) -> anyhow::Result<Vec<Triangle>, anyhow::Error> {
+fn parse_binary(bytes: &[u8]) -> anyhow::Result<Mesh> {
     if bytes.len() < 84 {
         return Err(anyhow::anyhow!("binary STL file too small"));
     }
@@ -198,7 +145,7 @@ fn parse_binary(bytes: &[u8]) -> anyhow::Result<Vec<Triangle>, anyhow::Error> {
     cursor.seek(SeekFrom::Start(80))?;
 
     let declared_count = cursor.read_u32::<LittleEndian>()? as usize;
-    // data length after header and count
+    // the actual number of triangles that can be read from this file
     let data_len = bytes.len().saturating_sub(84);
     let physical_count = data_len / 50;
 
@@ -208,10 +155,16 @@ fn parse_binary(bytes: &[u8]) -> anyhow::Result<Vec<Triangle>, anyhow::Error> {
         declared_count
     };
 
-    // position cursor at the start of triangle data
+    // seek to the beginning of the triangle data
     cursor.seek(SeekFrom::Start(84))?;
 
-    let mut triangles = Vec::with_capacity(triangle_count);
+    let mut mesh = Mesh::default();
+    // using Euler's characteristic, we can estimate the number of unique vertices
+    // as roughly half the number of triangles for a well-formed mesh
+    mesh.vertices.reserve(triangle_count / 2);
+    mesh.faces.reserve(triangle_count);
+
+    let mut map = HashMap::with_capacity(triangle_count / 2);
 
     for _ in 0..triangle_count {
         // skip normal vector (3 * 4 bytes, (x, y, z))
@@ -219,41 +172,37 @@ fn parse_binary(bytes: &[u8]) -> anyhow::Result<Vec<Triangle>, anyhow::Error> {
         // in counter part, some exporters write really bad normals
         cursor.seek(SeekFrom::Current(12))?;
 
-        // vertices
-        let v0 = Vec3(
-            cursor.read_f32::<LittleEndian>()?,
-            cursor.read_f32::<LittleEndian>()?,
-            cursor.read_f32::<LittleEndian>()?,
-        );
-        let v1 = Vec3(
-            cursor.read_f32::<LittleEndian>()?,
-            cursor.read_f32::<LittleEndian>()?,
-            cursor.read_f32::<LittleEndian>()?,
-        );
-        let v2 = Vec3(
-            cursor.read_f32::<LittleEndian>()?,
-            cursor.read_f32::<LittleEndian>()?,
-            cursor.read_f32::<LittleEndian>()?,
-        );
+        let mut face = Face::default();
+
+        for _ in 0..3 {
+            let x = cursor.read_f32::<LittleEndian>()?;
+            let y = cursor.read_f32::<LittleEndian>()?;
+            let z = cursor.read_f32::<LittleEndian>()?;
+
+            let key = (x.to_bits(), y.to_bits(), z.to_bits());
+
+            let idx = *map.entry(key).or_insert_with(|| {
+                let idx = mesh.vertices.len();
+                mesh.vertices.push(Vec3(x, y, z));
+                idx
+            });
+            face.v.push(idx);
+        }
 
         // skip attribute byte count (2 bytes)
         cursor.seek(SeekFrom::Current(2))?;
-
-        let triangle = Triangle {
-            vertices: [v0, v1, v2],
-        };
-
-        triangles.push(triangle);
+        mesh.faces.push(face);
     }
 
-    anyhow::Ok(triangles)
+    anyhow::Ok(mesh)
 }
 
-fn parse_ascii(bytes: &[u8]) -> anyhow::Result<Vec<Triangle>, anyhow::Error> {
+fn parse_ascii(bytes: &[u8]) -> anyhow::Result<Mesh> {
     let content = std::str::from_utf8(bytes)?;
+    let mut mesh = Mesh::default();
 
-    let mut triangles = Vec::new();
-    let mut current_vertices = Vec::with_capacity(3);
+    let mut map = HashMap::new();
+    let mut face = Face::default();
 
     for line in content.lines() {
         let line = line.trim();
@@ -268,21 +217,22 @@ fn parse_ascii(bytes: &[u8]) -> anyhow::Result<Vec<Triangle>, anyhow::Error> {
                     parts[3].parse::<f32>(),
                 )
             {
-                current_vertices.push(Vec3(x, y, z));
-            }
-        } else if line.starts_with("endfacet") || line.starts_with("endloop") {
-            if current_vertices.len() == 3 {
-                triangles.push(Triangle {
-                    vertices: [
-                        current_vertices[0],
-                        current_vertices[1],
-                        current_vertices[2],
-                    ],
+                let key = (x.to_bits(), y.to_bits(), z.to_bits());
+
+                let idx = *map.entry(key).or_insert_with(|| {
+                    let idx = mesh.vertices.len();
+                    mesh.vertices.push(Vec3(x, y, z));
+                    idx
                 });
+                face.v.push(idx);
             }
-            current_vertices.clear();
+        } else if (line.starts_with("endfacet") || line.starts_with("endloop"))
+            && !face.v.is_empty()
+        {
+            mesh.faces.push(face);
+            face = Face::default();
         }
     }
 
-    anyhow::Ok(triangles)
+    anyhow::Ok(mesh)
 }

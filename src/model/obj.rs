@@ -12,15 +12,210 @@
 // g name           | group name
 // mtllib file      | material library
 // usemtl name      | use material
-use crate::{
-    calculate::triangulation::triangulate,
-    model::{MeshParser, Triangle, Vec3, indexed_mesh::IndexedMesh},
-};
-use rayon::prelude::*;
+use crate::model::{Face, Group, Mesh, MeshCodec, Vec2, Vec3};
 use std::{
     fs::File,
     io::{BufRead, BufWriter, Cursor, Write},
+    path::Path,
+    thread::current,
 };
+
+pub struct ObjCodec;
+
+impl MeshCodec for ObjCodec {
+    fn parse(&self, bytes: &[u8]) -> anyhow::Result<Mesh> {
+        let mut mesh = Mesh::default();
+        let mut cursor = Cursor::new(bytes);
+        let mut line_buf = String::new();
+
+        let mut current_name = String::from("mesh_rs");
+        let mut current_material: Option<String> = None;
+
+        mesh.groups.push(Group {
+            name: current_name.clone(),
+            material: current_material.clone(),
+            face_range: 0..0,
+        });
+
+        while cursor.read_line(&mut line_buf)? > 0 {
+            let line = line_buf.trim();
+
+            if line.is_empty() {
+                line_buf.clear();
+                continue;
+            }
+
+            if line.starts_with("v ") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 4
+                    && let (Ok(x), Ok(y), Ok(z)) = (
+                        parts[1].parse::<f32>(),
+                        parts[2].parse::<f32>(),
+                        parts[3].parse::<f32>(),
+                    )
+                {
+                    mesh.vertices.push(Vec3(x, y, z));
+                }
+            } else if line.starts_with("vt ") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 3
+                    && let (Ok(u), Ok(v)) = (parts[1].parse::<f32>(), parts[2].parse::<f32>())
+                {
+                    mesh.textures.push(Vec2(u, v));
+                }
+            } else if line.starts_with("vn ") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 4
+                    && let (Ok(x), Ok(y), Ok(z)) = (
+                        parts[1].parse::<f32>(),
+                        parts[2].parse::<f32>(),
+                        parts[3].parse::<f32>(),
+                    )
+                {
+                    mesh.normals.push(Vec3(x, y, z));
+                }
+            // Face parsing
+            // v1/vt1/vn1 v2/vt2/vn2 v3/vt3/vn3 # face with texture and normals
+            // v1//vn1 v2//vn2 v3//vn3 # face with normals only
+            // v1/vt1 v2/vt2 v3/vt3 # face with only texture index
+            } else if line.starts_with("f ") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                let mut face = Face::default();
+
+                for part in parts.iter().skip(1) {
+                    let segemnt: Vec<&str> = part.split('/').collect();
+
+                    if let Ok(idx) = segemnt[0].parse::<u32>() {
+                        face.v.push((idx - 1) as usize); // OBJ indices are 1-based
+                    } else {
+                        // vertex index is required to process the face
+                        continue;
+                    }
+
+                    // texture index (optional)
+                    if segemnt.len() > 1
+                        && !segemnt[1].is_empty()
+                        && let Ok(idx) = segemnt[1].parse::<u32>()
+                    {
+                        face.vt.push((idx - 1) as usize);
+                    }
+
+                    // normal index (optional)
+                    if segemnt.len() > 2
+                        && !segemnt[2].is_empty()
+                        && let Ok(idx) = segemnt[2].parse::<u32>()
+                    {
+                        face.vn.push((idx - 1) as usize);
+                    }
+                }
+
+                mesh.faces.push(face);
+            } else if line.starts_with("mtllib ") {
+                // trim the "mtllib "
+                let library = line[7..].trim().to_string();
+                mesh.matlibs.push(library);
+            } else if line.starts_with("o ")
+                || line.starts_with("g ")
+                || line.starts_with("usemtl ")
+            {
+                // close the range of the previous group
+                if let Some(last_group) = mesh.groups.last_mut() {
+                    last_group.face_range.end = mesh.faces.len();
+                }
+
+                match line.starts_with("usemtl ") {
+                    true => {
+                        current_material = Some(line[7..].trim().to_string());
+                    }
+                    false => {
+                        // trim the "o " or "g "
+                        current_name = line[2..].trim().to_string();
+                    }
+                }
+
+                mesh.groups.push(Group {
+                    name: current_name.clone(),
+                    material: current_material.clone(),
+                    face_range: mesh.faces.len()..mesh.faces.len(),
+                });
+            }
+
+            line_buf.clear();
+        }
+
+        // close the range of the last group
+        if let Some(last_group) = mesh.groups.last_mut() {
+            last_group.face_range.end = mesh.faces.len();
+        }
+
+        Ok(mesh)
+    }
+
+    fn write(&self, path: &Path, mesh: &Mesh) -> anyhow::Result<()> {
+        let file = File::create(path)?;
+        let mut writer = BufWriter::new(file);
+
+        writeln!(writer, "# created by mesh_rs")?;
+
+        // write data arrays
+        for v in &mesh.vertices {
+            writeln!(writer, "v {:.6} {:.6} {:.6}", v.0, v.1, v.2)?;
+        }
+        for vt in &mesh.textures {
+            writeln!(writer, "vt {:.6} {:.6}", vt.0, vt.1)?;
+        }
+        for vn in &mesh.normals {
+            writeln!(writer, "vn {:.6} {:.6} {:.6}", vn.0, vn.1, vn.2)?;
+        }
+
+        // write faces, grouped by groups
+        for group in &mesh.groups {
+            // skip emtpy or default groups created during parsing
+            if group.face_range.start >= group.face_range.end && group.name == "mesh_rs" {
+                continue;
+            }
+
+            writeln!(writer, "g {}", group.name)?;
+
+            if let Some(material) = &group.material {
+                writeln!(writer, "usemtl {}", material)?;
+            }
+
+            for i in group.face_range.clone() {
+                if i >= mesh.faces.len() {
+                    break;
+                }
+
+                let face = &mesh.faces[i];
+                write!(writer, "f")?;
+
+                for j in 0..face.v.len() {
+                    // write vertex index (1-based)
+                    write!(writer, " {}", face.v[j] + 1)?;
+
+                    let has_vt = j < face.vt.len();
+                    let has_vn = j < face.vn.len();
+
+                    if has_vt || has_vn {
+                        write!(writer, "/")?;
+                        if has_vt {
+                            write!(writer, "{}", face.vt[j] + 1)?;
+                        }
+                    }
+
+                    if has_vn {
+                        write!(writer, "/{}", face.vn[j] + 1)?;
+                    }
+                }
+
+                writeln!(writer)?;
+            }
+        }
+
+        writer.flush()?;
+        Ok(())
+    }
+}
 
 pub fn validate_bytes(bytes: &[u8]) -> bool {
     let Ok(content) = std::str::from_utf8(bytes) else {
@@ -48,115 +243,4 @@ pub fn validate_bytes(bytes: &[u8]) -> bool {
     }
 
     has_vertices
-}
-
-pub struct OBJParser;
-
-impl MeshParser for OBJParser {
-    fn parse(bytes: &[u8]) -> anyhow::Result<Vec<super::Triangle>, anyhow::Error> {
-        let mut vertices = Vec::<Vec3>::new();
-        let mut faces = Vec::<Vec<usize>>::new();
-
-        let mut cursor = Cursor::new(bytes);
-        let mut line_buf = String::new();
-
-        while cursor.read_line(&mut line_buf)? > 0 {
-            let line = line_buf.trim();
-
-            // vertex parsing
-            // v x y z
-            if line.starts_with("v ") {
-                let mut split = line.split_whitespace();
-                split.next(); // skip the "v"
-
-                let x: f32 = split
-                    .next()
-                    .ok_or_else(|| anyhow::anyhow!("missing x coordinate on vertex"))?
-                    .parse()?;
-                let y: f32 = split
-                    .next()
-                    .ok_or_else(|| anyhow::anyhow!("missing y coordinate on vertex"))?
-                    .parse()?;
-                let z: f32 = split
-                    .next()
-                    .ok_or_else(|| anyhow::anyhow!("missing z coordinate on vertex"))?
-                    .parse()?;
-
-                vertices.push(Vec3(x, y, z));
-            }
-            // face parsing
-            else if line.starts_with("f ") {
-                let mut split = line.split_whitespace();
-                split.next(); // skip the "f"
-
-                let mut face = Vec::new();
-
-                for part in split {
-                    let mut nums = part.split('/');
-
-                    let part_str = nums
-                        .next()
-                        .ok_or_else(|| anyhow::anyhow!("missing vertex index on face"))?;
-                    let idx: usize = part_str.parse()?;
-
-                    face.push(idx - 1); // OBJ indices are 1-based
-                }
-
-                faces.push(face);
-            }
-
-            line_buf.clear();
-        }
-
-        let result_vecs: anyhow::Result<Vec<Vec<Triangle>>, anyhow::Error> = faces
-            .par_iter()
-            .map(|face_indices| {
-                if face_indices.len() == 3 {
-                    Ok(vec![Triangle {
-                        vertices: [
-                            vertices[face_indices[0]],
-                            vertices[face_indices[1]],
-                            vertices[face_indices[2]],
-                        ],
-                    }])
-                } else if face_indices.len() > 3 {
-                    let triangles = triangulate(&vertices, face_indices)?
-                        .into_iter()
-                        .collect::<Vec<Triangle>>();
-                    Ok(triangles)
-                } else {
-                    Ok(Vec::new())
-                }
-            })
-            .collect();
-
-        let result: Vec<Triangle> = result_vecs?.into_iter().flatten().collect();
-        Ok(result)
-    }
-
-    fn write(path: &std::path::Path, triangles: &[Triangle]) -> anyhow::Result<(), anyhow::Error> {
-        let mesh = IndexedMesh::from_triangles(triangles);
-
-        let file = File::create(path)?;
-        let mut writer = BufWriter::new(file);
-
-        writeln!(writer, "# created by mesh_rs")?;
-        writeln!(writer, "o Mesh")?;
-
-        //  format v x y z
-        //  we use string formatting ({:.6}) to write human readable numbers
-        for vertex in &mesh.vertices {
-            writeln!(writer, "v {:.6} {:.6} {:.6}", vertex.0, vertex.1, vertex.2)?;
-        }
-
-        // format "f v1 v2 v3"
-        for face in &mesh.faces {
-            // OBJ files are using 1-based indexing for vertex indices
-            // (see the OBJ specification on top)
-            writeln!(writer, "f {} {} {}", face[0] + 1, face[1] + 1, face[2] + 1)?;
-        }
-
-        writer.flush()?;
-        anyhow::Ok(())
-    }
 }
