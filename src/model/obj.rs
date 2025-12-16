@@ -17,7 +17,6 @@ use std::{
     fs::File,
     io::{BufRead, BufWriter, Cursor, Write},
     path::Path,
-    thread::current,
 };
 
 pub struct ObjCodec;
@@ -110,10 +109,8 @@ impl MeshCodec for ObjCodec {
                 }
 
                 mesh.faces.push(face);
-            } else if line.starts_with("mtllib ") {
-                // trim the "mtllib "
-                let library = line[7..].trim().to_string();
-                mesh.matlibs.push(library);
+            } else if let Some(matlib) = line.strip_prefix("mtllib ") {
+                mesh.matlibs.push(matlib.trim().to_string());
             } else if line.starts_with("o ")
                 || line.starts_with("g ")
                 || line.starts_with("usemtl ")
