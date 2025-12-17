@@ -101,7 +101,7 @@ fn main() -> anyhow::Result<()> {
     };
     mesh.weld();
 
-    match command {
+    match cli.command {
         Commands::Diagonal => {
             let diagonal = calculate::diagonal(&mesh)?;
             ui::print_kv("Diagonal", format!("{:.4}", diagonal));
