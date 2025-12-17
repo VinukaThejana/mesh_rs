@@ -154,6 +154,11 @@ impl MeshCodec for ObjCodec {
 
         writeln!(writer, "# created by mesh_rs")?;
 
+        // write material libraries
+        for matlib in &mesh.matlibs {
+            writeln!(writer, "mtllib {}", matlib)?;
+        }
+
         // write data arrays
         for v in &mesh.vertices {
             writeln!(writer, "v {:.6} {:.6} {:.6}", v.0, v.1, v.2)?;
