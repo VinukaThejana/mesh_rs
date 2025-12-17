@@ -4,7 +4,7 @@ use mesh_rs::{
     calculate,
     model::{self, MeshCodec, obj::ObjCodec, stl::StlCodec},
     ui,
-    util::warn_units,
+    util::{warn_topology, warn_units},
 };
 
 use clap::{Parser, Subcommand};
@@ -101,7 +101,7 @@ fn main() -> anyhow::Result<()> {
     };
     mesh.weld();
 
-    match cli.command {
+    match command {
         Commands::Diagonal => {
             let diagonal = calculate::diagonal(&mesh)?;
             ui::print_kv("Diagonal", format!("{:.4}", diagonal));
@@ -126,6 +126,7 @@ fn main() -> anyhow::Result<()> {
             ui::print_kv("Diagonal", format!("{:.4}", diagonal));
             ui::print_kv("Volume", format!("{:.4}", volume));
 
+            warn_topology(&mesh);
             warn_units(cli.input.to_str().unwrap(), volume, diagonal);
         }
         Commands::Scale {
