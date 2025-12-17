@@ -215,6 +215,31 @@ impl Mesh {
             .map(|face| face.v.len().saturating_sub(2))
             .sum()
     }
+
+    pub fn topology(&self) -> HashMap<(usize, usize), usize> {
+        let mut map = HashMap::<(usize, usize), usize>::new();
+
+        for face in &self.faces {
+            // skip faces with less than 3 vertices
+            if face.v.len() < 3 {
+                continue;
+            }
+
+            for i in 0..face.v.len() {
+                let v0 = face.v[i];
+                let v1 = face.v[(i + 1) % face.v.len()];
+
+                if v0 == v1 {
+                    continue;
+                }
+
+                let edge = if v0 < v1 { (v0, v1) } else { (v1, v0) };
+                *map.entry(edge).or_insert(0) += 1;
+            }
+        }
+
+        map
+    }
 }
 
 impl Mesh {
