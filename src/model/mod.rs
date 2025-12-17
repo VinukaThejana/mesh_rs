@@ -263,6 +263,8 @@ impl Default for Mesh {
 }
 
 #[derive(Debug, Default, Clone)]
+// a face can be a triangle, quad or polygon with more than 4 vertices
+// 4 is choosen as the inline size for SmallVec to optimize for common cases
 pub struct Face {
     // vertex indices
     pub v: SmallVec<[usize; 4]>,
