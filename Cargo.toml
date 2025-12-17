@@ -5,7 +5,6 @@ edition = "2024"
 authors = ["VinukaThejana"]
 description = "A Rust library for 3D mesh processing and analysis."
 license = "MIT"
-license-file = "LICENSE"
 keywords = ["3dprinting", "mesh", "stl", "obj", "3dscaling"]
 
 [dependencies]

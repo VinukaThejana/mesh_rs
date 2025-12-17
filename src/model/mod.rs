@@ -1,11 +1,13 @@
 pub mod obj;
 pub mod stl;
 
-use std::ops::Range;
+use std::{collections::HashMap, ops::Range};
 
 use nalgebra::Vector3;
 use rayon::iter::{IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator};
 use smallvec::SmallVec;
+
+use crate::ui;
 
 pub const MAX_TRIANGLES: u32 = 1_000_000;
 
@@ -144,6 +146,42 @@ pub struct Mesh {
 }
 
 impl Mesh {
+    pub fn weld(&mut self) {
+        let mut map: HashMap<(u32, u32, u32), usize> = HashMap::new();
+
+        let mut new_vertices: Vec<Vec3> = Vec::with_capacity(self.vertices.len());
+        // lookup table: old index -> new index
+        let mut remap: Vec<usize> = vec![0; self.vertices.len()];
+
+        for (old_index, vertex) in self.vertices.iter().enumerate() {
+            let key = (vertex.0.to_bits(), vertex.1.to_bits(), vertex.2.to_bits());
+
+            let idx = *map.entry(key).or_insert_with(|| {
+                let idx = new_vertices.len();
+                new_vertices.push(*vertex);
+                idx
+            });
+
+            remap[old_index] = idx;
+        }
+
+        if new_vertices.len() != self.vertices.len() {
+            ui::print_newline();
+            ui::print_warn("welding vertices: ");
+            ui::print_kv("before", self.vertices.len());
+            ui::print_kv("after", new_vertices.len());
+            ui::print_newline();
+        }
+
+        self.vertices = new_vertices;
+        for face in &mut self.faces {
+            for i in 0..face.v.len() {
+                let old_index = face.v[i];
+                face.v[i] = remap[old_index];
+            }
+        }
+    }
+
     pub fn scale(&mut self, target_diagonal: f32) -> anyhow::Result<()> {
         let (min_vertex, max_vertex) = self.bounds()?;
 

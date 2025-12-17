@@ -99,6 +99,7 @@ fn main() -> anyhow::Result<()> {
         model::Format::STL => StlCodec.parse(&buffer)?,
         model::Format::OBJ => ObjCodec.parse(&buffer)?,
     };
+    mesh.weld();
 
     match cli.command {
         Commands::Diagonal => {

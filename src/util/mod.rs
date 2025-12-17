@@ -7,7 +7,7 @@ pub fn warn_units(file_name: &str, volume: f64, diagonal: f32) {
         return;
     }
 
-    println!();
+    ui::print_newline();
     ui::print_warn(&format!(
         "The object from file '{}' is too small, and may be in 'meters' or 'inches'",
         file_name,

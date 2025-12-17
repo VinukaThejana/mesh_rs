@@ -17,7 +17,6 @@
 use crate::model::{Face, MAX_TRIANGLES, Mesh, MeshCodec, Vec3};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::{
-    collections::HashMap,
     fs::File,
     io::{BufWriter, Cursor, Seek, SeekFrom, Write},
     path::Path,
@@ -164,8 +163,6 @@ fn parse_binary(bytes: &[u8]) -> anyhow::Result<Mesh> {
     mesh.vertices.reserve(triangle_count / 2);
     mesh.faces.reserve(triangle_count);
 
-    let mut map = HashMap::with_capacity(triangle_count / 2);
-
     for _ in 0..triangle_count {
         // skip normal vector (3 * 4 bytes, (x, y, z))
         // we can compute it ourselves if needed
@@ -179,14 +176,8 @@ fn parse_binary(bytes: &[u8]) -> anyhow::Result<Mesh> {
             let y = cursor.read_f32::<LittleEndian>()?;
             let z = cursor.read_f32::<LittleEndian>()?;
 
-            let key = (x.to_bits(), y.to_bits(), z.to_bits());
-
-            let idx = *map.entry(key).or_insert_with(|| {
-                let idx = mesh.vertices.len();
-                mesh.vertices.push(Vec3(x, y, z));
-                idx
-            });
-            face.v.push(idx);
+            mesh.vertices.push(Vec3(x, y, z));
+            face.v.push(mesh.vertices.len() - 1);
         }
 
         // skip attribute byte count (2 bytes)
@@ -201,7 +192,6 @@ fn parse_ascii(bytes: &[u8]) -> anyhow::Result<Mesh> {
     let content = std::str::from_utf8(bytes)?;
     let mut mesh = Mesh::default();
 
-    let mut map = HashMap::new();
     let mut face = Face::default();
 
     for line in content.lines() {
@@ -217,14 +207,8 @@ fn parse_ascii(bytes: &[u8]) -> anyhow::Result<Mesh> {
                     parts[3].parse::<f32>(),
                 )
             {
-                let key = (x.to_bits(), y.to_bits(), z.to_bits());
-
-                let idx = *map.entry(key).or_insert_with(|| {
-                    let idx = mesh.vertices.len();
-                    mesh.vertices.push(Vec3(x, y, z));
-                    idx
-                });
-                face.v.push(idx);
+                mesh.vertices.push(Vec3(x, y, z));
+                face.v.push(mesh.vertices.len() - 1);
             }
         } else if (line.starts_with("endfacet") || line.starts_with("endloop"))
             && !face.v.is_empty()
