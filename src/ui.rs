@@ -25,6 +25,10 @@ pub fn print_kv<T: Display>(key: &str, value: T) {
     println!("{:<15} {}", format!("{}:", key).bold(), value);
 }
 
+pub fn print_newline() {
+    println!();
+}
+
 pub fn print_plain(msg: &str) {
     println!("{}", msg);
 }
