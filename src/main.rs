@@ -33,7 +33,7 @@ struct Cli {
     input: PathBuf,
 
     #[command(subcommand)]
-    command: Commands,
+    command: Option<Commands>,
 }
 
 #[derive(Subcommand)]
@@ -101,7 +101,9 @@ fn main() -> anyhow::Result<()> {
     };
     mesh.weld();
 
-    match cli.command {
+    let command = cli.command.unwrap_or(Commands::Stats);
+
+    match command {
         Commands::Diagonal => {
             let diagonal = calculate::diagonal(&mesh)?;
             ui::print_kv("Diagonal", format!("{:.4}", diagonal));
